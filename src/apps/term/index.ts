@@ -9,6 +9,7 @@ import { ipc } from '../../ipc'
 import type { AppContext, AppManifest } from '../../kernel/types'
 import { fault } from '../../system/dialog'
 import { MONO, PHOSPHOR as P } from '../../theme'
+import { sanitizePaste } from './paste'
 import { createPtyRouter } from './router'
 
 export interface TermArgs { cwd?: string; command?: string }
@@ -76,7 +77,8 @@ async function mountTerminal({ win }: AppContext, args: TermArgs) {
     if (ev.type !== 'keydown' || !ev.ctrlKey || !ev.shiftKey) return true
     if (ev.code === 'KeyF') { find.classList.remove('hidden'); findInput.select(); findInput.focus(); return false }
     if (ev.code === 'KeyC') { const s = xterm.getSelection(); if (s) void writeText(s); return false }
-    if (ev.code === 'KeyV') { void readText().then(t => { if (t && id !== null) void ipc.ptyWrite(id, t) }).catch(() => {}); return false }
+    // xterm.paste() applies bracketed paste when the shell asked for it, then routes through onData
+    if (ev.code === 'KeyV') { void readText().then(t => { if (t) xterm.paste(sanitizePaste(t)) }).catch(() => {}); return false }
     return true
   })
   findInput.addEventListener('keydown', e => {
