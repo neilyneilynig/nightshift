@@ -9,3 +9,12 @@ describe('markdown preview', () => {
     expect(html).not.toContain('<script')
   })
 })
+
+describe('markdown preview containment', () => {
+  it('strips inline styles and form controls that could fake app UI', async () => {
+    const html = await renderMarkdown('<div style="position:fixed;inset:0">SYSTEM FAULT</div><form><input type="password"><button>OK</button></form><style>body{}</style>')
+    expect(html).toContain('SYSTEM FAULT')
+    expect(html).not.toContain('style')
+    expect(html).not.toMatch(/<(form|input|button)/)
+  })
+})

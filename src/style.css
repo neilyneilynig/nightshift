@@ -88,7 +88,7 @@ body.dragging .win-body { pointer-events: none; }
 .edit-panes { flex: 1; min-height: 0; display: flex; }
 .edit-cm { flex: 1; min-width: 0; }
 .edit-cm .cm-editor { height: 100%; }
-.edit-preview { flex: 1; overflow: auto; padding: 8px 16px; border-left: 1px solid var(--line); color: var(--bright); user-select: text; }
+.edit-preview { flex: 1; overflow: auto; contain: strict; position: relative; padding: 8px 16px; border-left: 1px solid var(--line); color: var(--bright); user-select: text; }
 .edit-preview a { color: var(--cyan); }
 .edit-preview code, .edit-preview pre { background: #0c1a12; }
 .edit-status { display: flex; gap: 16px; padding: 2px 8px; border-top: 1px solid var(--line); color: var(--dim); font-size: 12px; }
