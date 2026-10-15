@@ -6,6 +6,7 @@ import { createRegistry } from './kernel/registry'
 import { edit } from './apps/edit'
 import { files } from './apps/files'
 import { scan } from './apps/scan'
+import { createSysop } from './apps/sysop'
 import { term } from './apps/term'
 import type { AppManifest } from './kernel/types'
 import { restore, startPersistence } from './persist'
@@ -26,6 +27,7 @@ const registry = createRegistry(wm, bus)
 // later tasks append app manifests here
 const apps: AppManifest[] = [term, edit, files, scan]
 apps.forEach(a => registry.register(a))
+registry.register(createSysop(registry))
 
 const cap = (s: string) => s[0].toUpperCase() + s.slice(1)
 const onFocused = (fn: (id: number) => void) => () => { const f = wm.focused(); if (f) fn(f.id) }
