@@ -2,6 +2,8 @@
 
 mod fs;
 mod pty;
+mod search;
+mod state;
 
 fn main() {
     tauri::Builder::default()
@@ -14,6 +16,7 @@ fn main() {
             fs::ws_open, fs::ws_root, fs::fs_list, fs::fs_read, fs::fs_write,
             fs::fs_stat, fs::fs_mkdir, fs::fs_rename, fs::fs_delete,
             pty::pty_spawn, pty::pty_write, pty::pty_resize, pty::pty_kill,
+            search::search_files, search::search_text, state::state_load, state::state_save,
         ])
         .run(tauri::generate_context!())
         .expect("error while running nightshift");
