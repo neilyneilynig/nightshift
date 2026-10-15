@@ -92,12 +92,15 @@ interface AppManifest {
   hotkey?: string       // e.g. 'Ctrl+Alt+T'
   multi: boolean        // can open several windows
   needs?: string[]      // CLI tools; missing → MODULE NOT INSTALLED
-  open(ctx: AppContext, args?: unknown): AppWindow
+  size?: { w: number; h: number }
+  open?(ctx: AppContext, args?: unknown): void  // window apps: ctx.win is pre-created
+  run?(args?: unknown): void                    // overlay apps (no window)
 }
 ```
 
-- `AppContext` gives each app: `ipc`, `bus`, `notify()`, `confirm()`,
-  `eddies.earn()`, `theme`, and a per-app settings store.
+- `AppContext` gives each app its window handle (`win`) and the `bus`;
+  apps import `ipc`, dialogs and other kernel services directly. Later
+  milestones extend the context (`eddies`, per-app settings).
 - Apps never import each other; they talk through `bus` events
   (`file:open`, `job:run`, `job:done`, `git:changed`, `gig:new`, ...).
 - Launch surfaces, all fed by the registry: desktop icons, **JACK menu**
@@ -115,9 +118,9 @@ Terminals are real shells (not sandboxed) and start in the root.
 | App | What it is |
 |---|---|
 | **TERM** `>_` | Real `$SHELL` in a PTY. Multiple windows, split panes, scrollback search, clickable links, copy/paste. |
-| **EDIT** `{}` | Code editor: file tree, tabs, split view, find/replace, Ctrl+S, dirty markers, reload-on-external-change prompt, live markdown preview. |
+| **EDIT** `{}` | Code editor: file tree, tabs, split view (milestone 3), find/replace, Ctrl+S, dirty markers, reload-on-external-change prompt, live markdown preview. |
 | **CONSTRUCT** `AI` | TERM preset that launches `claude` in the workspace, framed as a jacked-in AI construct with a pulsing engram border. |
-| **SCAN** `?/` | Ctrl+P fuzzy file open; Ctrl+Shift+S project-wide search, results open EDIT at the line. |
+| **SCAN** `?/` | Ctrl+Shift+P fuzzy file open; Ctrl+Shift+S project-wide search, results open EDIT at the line. |
 | **NETWATCH** `<>` | Git: branch, ahead/behind, changed files, diff viewer, stage/unstage, commit, recent log, branch switcher. |
 | **JOBS** `!!` | Auto-detected npm/cargo/make tasks; runs them in TERM panes with pass/fail status lights and run history. |
 | **OPTICS** `()` | Built-in browser window for `localhost` dev servers and docs (Tauri webview), with HUD frame and reload hotkey. |
@@ -161,7 +164,7 @@ Terminals are real shells (not sandboxed) and start in the root.
 
 | App | What it is |
 |---|---|
-| **SYSOP CMD** `>` | Ctrl+K palette for every app and action, styled `SYSOP> _`. |
+| **SYSOP CMD** `>` | Ctrl+Shift+K palette for every app and action, styled `SYSOP> _`. |
 | **JACK** `JK` | Start menu: apps by category, recent files, workspace switcher, logout ("Goodbye"). |
 | **RIPPERDOC** `+` | Settings as a cyberware body scan: Optics (CRT/glitch/theme), Audio Cortex (sound/radio), Neural Link (keybindings), Kiroshi (scan mode), OS (boot, nodes, sysop). |
 | **NODES** `1234` | Overview of the 4 virtual desktops with live thumbnails; drag windows between them. |
@@ -196,9 +199,13 @@ These are global, not windows; each is configured in RIPPERDOC or its app.
 - **Boot:** BIOS POST → modem handshake (synthesized) → optional ICEBREAK
   jack-in → BBS ANSI title → login. Esc skips; can be disabled.
 - **Window manager:** drag, resize, min/max/close, box-drawing frames, snap
-  with Super+arrows, tile-all, desktop icons, taskbar with node lights,
+  with Ctrl+Alt+arrows, tile-all, desktop icons, taskbar with node lights,
   clock, CPU/RAM blips, git branch, running daemons, trace meter.
-- **Nodes:** 4 virtual desktops, Ctrl+1..4.
+- **Nodes:** 4 virtual desktops, Ctrl+Alt+1..4 (Ctrl+Alt+Shift+N moves the
+  focused window).
+- **Hotkey rule:** global hotkeys use Ctrl+Shift or Ctrl+Alt so they never
+  steal shell/readline keys (Ctrl+K, Ctrl+P, Ctrl+W...) from TERM, and never
+  Super (owned by Hyprland).
 - **SCAN MODE (hold Alt):** desaturate + glitch; every window gets a HUD tag
   with real data (PID/cwd/command for TERM, size/language/last author for
   EDIT, etc.); corner reticles.
