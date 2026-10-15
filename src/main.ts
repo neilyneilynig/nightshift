@@ -9,7 +9,8 @@ import { scan } from './apps/scan'
 import { createSysop } from './apps/sysop'
 import { term } from './apps/term'
 import type { AppManifest } from './kernel/types'
-import { restore, startPersistence } from './persist'
+import { getCurrentWindow } from '@tauri-apps/api/window'
+import { restore, saveNow, startPersistence } from './persist'
 import { fault, guarded, toast } from './system/dialog'
 import { workspace } from './workspace'
 import { mountIcons } from './wm/desktop'
@@ -64,3 +65,9 @@ window.addEventListener('resize', () => wm.reflow())
 await restore(registry, wm).catch(fault)
 if (!workspace.root) toast('NO WORKSPACE JACKED IN ─ Ctrl+Alt+O to open a folder', 6000)
 startPersistence(wm, bus)
+
+// quitting the app runs every window's unsaved-changes guard, then flushes the layout
+void getCurrentWindow().onCloseRequested(async e => {
+  if (!(await wm.canCloseAll())) { e.preventDefault(); return }
+  await saveNow(wm).catch(() => {})
+})

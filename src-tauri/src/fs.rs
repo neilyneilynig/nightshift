@@ -122,6 +122,9 @@ pub fn read_text(root: &Path, rel: &str) -> Result<String, String> {
     if meta.is_dir() {
         return Err(format!("{rel} is a directory"));
     }
+    if !meta.is_file() {
+        return Err(format!("{rel} is not a regular file"));
+    }
     if meta.len() > MAX_READ_BYTES {
         return Err(format!(
             "FILE TOO LARGE: {rel} is {:.1} MB (limit 5 MB)",
@@ -129,6 +132,10 @@ pub fn read_text(root: &Path, rel: &str) -> Result<String, String> {
         ));
     }
     let bytes = fs::read(&p).map_err(|e| format!("{rel}: {e}"))?;
+    // NUL bytes mean binary (or UTF-16) even when the bytes happen to be valid UTF-8
+    if bytes.iter().take(8192).any(|&b| b == 0) {
+        return Err(format!("BINARY DATA: {rel} is not UTF-8 text"));
+    }
     String::from_utf8(bytes).map_err(|_| format!("BINARY DATA: {rel} is not UTF-8 text"))
 }
 
@@ -182,12 +189,12 @@ pub fn ws_root(ws: State<WorkspaceState>) -> Option<String> {
     ws.0.lock().unwrap().as_ref().map(|p| p.to_string_lossy().to_string())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn fs_list(ws: State<WorkspaceState>, path: String) -> Result<Vec<Entry>, String> {
     list_dir(&ws.root()?, &path)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn fs_read(ws: State<WorkspaceState>, path: String) -> Result<String, String> {
     read_text(&ws.root()?, &path)
 }
@@ -276,6 +283,22 @@ mod tests {
         let (_d, root) = ws();
         fs::write(root.join("bin"), [0xff, 0xfe, 0x00]).unwrap();
         assert!(read_text(&root, "bin").unwrap_err().contains("BINARY DATA"));
+    }
+
+    #[test]
+    fn read_rejects_nul_bytes_and_utf16() {
+        let (_d, root) = ws();
+        fs::write(root.join("zeros.img"), vec![0u8; 4096]).unwrap();
+        fs::write(root.join("u16.txt"), [0x68, 0x00, 0x69, 0x00]).unwrap();
+        assert!(read_text(&root, "zeros.img").unwrap_err().contains("BINARY DATA"));
+        assert!(read_text(&root, "u16.txt").unwrap_err().contains("BINARY DATA"));
+    }
+
+    #[test]
+    fn read_rejects_fifo() {
+        let (_d, root) = ws();
+        assert!(std::process::Command::new("mkfifo").arg(root.join("pipe")).status().unwrap().success());
+        assert!(read_text(&root, "pipe").unwrap_err().contains("not a regular file"));
     }
 
     #[test]

@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod fs;
+mod nav;
 mod pty;
 mod search;
 mod state;
@@ -10,6 +11,7 @@ fn main() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_clipboard_manager::init())
+        .plugin(nav::guard())
         .manage(fs::WorkspaceState::default())
         .manage(pty::PtyState::default())
         .invoke_handler(tauri::generate_handler![

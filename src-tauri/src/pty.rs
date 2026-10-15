@@ -118,7 +118,7 @@ pub fn pty_spawn(
     Ok(id)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn pty_write(ptys: State<PtyState>, id: u32, data: String) -> Result<(), String> {
     let mut map = ptys.sessions.lock().unwrap();
     let s = map.get_mut(&id).ok_or_else(|| format!("NO CARRIER: session {id}"))?;
@@ -137,10 +137,11 @@ pub fn pty_resize(ptys: State<PtyState>, id: u32, cols: u16, rows: u16) -> Resul
 
 #[tauri::command]
 pub fn pty_kill(ptys: State<PtyState>, id: u32) {
-    if let Some(mut s) = ptys.sessions.lock().unwrap().remove(&id) {
-        let _ = s.child.kill();
-        // reap off-thread so the process never lingers as a zombie
+    let removed = ptys.sessions.lock().unwrap().remove(&id);
+    if let Some(mut s) = removed {
+        // kill + reap off-thread: kill can poll for ~200 ms; the session lock is already released
         std::thread::spawn(move || {
+            let _ = s.child.kill();
             let _ = s.child.wait();
         });
     }

@@ -62,3 +62,13 @@ describe('WindowManager', () => {
     expect(s[0].rect.w).toBeGreaterThanOrEqual(320)
   })
 })
+
+describe('canCloseAll', () => {
+  it('asks every window and refuses if any guard refuses', async () => {
+    const a = mk(), b = mk('edit')
+    a.beforeClose(() => true)
+    expect(await wm.canCloseAll()).toBe(true)
+    b.beforeClose(async () => false)
+    expect(await wm.canCloseAll()).toBe(false)
+  })
+})

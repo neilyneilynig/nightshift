@@ -97,6 +97,14 @@ export class WindowManager implements WindowManagerLike {
     return true
   }
 
+  /** run every window's beforeClose guards (app quit); false if any refuses */
+  async canCloseAll(): Promise<boolean> {
+    for (const w of this.wins.values()) {
+      for (const g of w.guards) if (!(await g())) return false
+    }
+    return true
+  }
+
   minimize(id: number) {
     const w = this.wins.get(id)
     if (!w) return

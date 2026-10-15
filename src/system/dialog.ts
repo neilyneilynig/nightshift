@@ -25,10 +25,13 @@ function modal<T>(o: ModalOpts, build: (box: HTMLElement) => ModalSpec<T>): Prom
     backdrop.append(box)
     backdrop.addEventListener('keydown', e => {
       if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); done(spec.cancel) }
+      else if (e.key === 'Enter' && (e.target as HTMLElement).tagName === 'BUTTON') { e.preventDefault(); e.stopPropagation(); (e.target as HTMLButtonElement).click() }
       else if (e.key === 'Enter' && spec.enter) { e.preventDefault(); e.stopPropagation(); done(spec.enter()) }
     })
     document.body.append(backdrop)
-    ;(spec.focus ?? (row.querySelector('[data-act=ok]') as HTMLElement | null))?.focus()
+    // risky dialogs start on CANCEL so a stray Enter can't confirm them
+    const fallback = row.querySelector(o.danger ? '[data-act=cancel]' : '[data-act=ok]') as HTMLElement | null
+    ;(spec.focus ?? fallback ?? row.querySelector('[data-act=ok]') as HTMLElement | null)?.focus()
   })
 }
 
@@ -62,9 +65,11 @@ export function fault(err: unknown): void {
   })).then(v => { if (v === 'copy') void navigator.clipboard?.writeText(message).catch(() => {}) })
 }
 
+// held by reference: querying '.toasts' could pick up an element from a previewed file
+let tray: HTMLElement | null = null
+
 export function toast(msg: string, ms = 3500): void {
-  let tray = document.querySelector('.toasts') as HTMLElement | null
-  if (!tray) { tray = document.createElement('div'); tray.className = 'toasts'; document.body.append(tray) }
+  if (!tray?.isConnected) { tray = document.createElement('div'); tray.className = 'toasts'; document.body.append(tray) }
   const t = document.createElement('div'); t.className = 'toast'; t.textContent = msg
   tray.append(t)
   setTimeout(() => t.remove(), ms)

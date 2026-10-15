@@ -10,6 +10,7 @@ import { workspace } from '../../workspace'
 import { phosphorTheme } from './cmtheme'
 import { langKey, loadLanguage, type LangKey } from './langs'
 import { renderMarkdown } from './preview'
+import { externalAction, stillDirty } from './sync'
 import { TabList } from './tabs'
 import { createTree } from './tree'
 
@@ -102,9 +103,10 @@ function mountEditor({ win, bus }: AppContext, initial: EditArgs) {
         const ok = await confirmDialog({ title: 'SHARD CONFLICT', message: `${path} changed on disk since you opened it.\nOverwrite it with your version?`, ok: 'OVERWRITE', danger: true })
         if (!ok) return
       }
-      const out = await ipc.write(path, (path === current ? view.state : d.state).doc.toString())
+      const savedDoc = (path === current ? view.state : d.state).doc
+      const out = await ipc.write(path, savedDoc.toString())
       d.mtime = out.mtime_ms
-      d.dirty = false
+      d.dirty = stillDirty(savedDoc, (path === current ? view.state : d.state).doc)
       statusMsg = 'SAVED'
       renderTabs(); renderStatus()
       bus.emit('fs:changed', path)
@@ -120,8 +122,10 @@ function mountEditor({ win, bus }: AppContext, initial: EditArgs) {
     try {
       const st = await ipc.stat(path).catch(() => null)
       if (!st || st.mtime_ms === d.mtime) return
+      const action = externalAction(d.dirty, win.body.contains(document.activeElement))
+      if (action === 'defer') { statusMsg = '⚠ CHANGED ON DISK'; renderStatus(); return } // ask on next focus
       d.mtime = st.mtime_ms
-      if (d.dirty) {
+      if (action === 'ask') {
         const reload = await confirmDialog({ title: 'EXTERNAL WRITE DETECTED', message: `${path} changed on disk.\nReload it and discard your unsaved edits?`, ok: 'RELOAD', cancel: 'KEEP MINE', danger: true })
         if (!reload) return
       }
@@ -185,10 +189,9 @@ function mountEditor({ win, bus }: AppContext, initial: EditArgs) {
   }
   async function renderPreview() { $('.edit-preview').innerHTML = await renderMarkdown(view.state.doc.toString()) }
   $('.edit-preview').addEventListener('click', e => {
-    const a = (e.target as HTMLElement).closest('a')
-    if (!a) return
     e.preventDefault()
-    if (/^https?:/.test(a.href)) void openUrl(a.href)
+    const a = (e.target as HTMLElement).closest('a')
+    if (a && /^https?:/.test(a.href)) void openUrl(a.href)
   })
 
   function persist() { win.setPersist({ files: [...tabs.paths], active: current } satisfies EditArgs) }

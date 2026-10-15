@@ -77,12 +77,12 @@ pub fn grep(root: &Path, query: &str) -> Result<Vec<Hit>, String> {
         .collect())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn search_files(ws: State<WorkspaceState>) -> Result<Vec<String>, String> {
     Ok(list_files(&ws.root()?, FILE_CAP))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn search_text(ws: State<WorkspaceState>, query: String) -> Result<Vec<Hit>, String> {
     grep(&ws.root()?, &query)
 }

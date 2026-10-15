@@ -40,12 +40,16 @@ export async function restore(registry: Registry, wm: WindowManager): Promise<vo
   wm.setNode(saved.node)
 }
 
+export function saveNow(wm: WindowManager): Promise<void> {
+  return ipc.stateSave(buildSaved(wm.serialize(), wm.node, workspace.root))
+}
+
 export function startPersistence(wm: WindowManager, bus: Bus): void {
   let timer: number | undefined
   const save = () => {
     clearTimeout(timer)
     timer = window.setTimeout(() => {
-      ipc.stateSave(buildSaved(wm.serialize(), wm.node, workspace.root)).catch(e => console.warn('[persist]', e))
+      saveNow(wm).catch(e => console.warn('[persist]', e))
     }, 800)
   }
   for (const ev of ['wm:changed', 'persist:changed', 'workspace:changed']) bus.on(ev, save)
