@@ -3,6 +3,7 @@ import { bus } from './kernel/bus'
 import { commands } from './kernel/commands'
 import { installHotkeys } from './kernel/hotkeys'
 import { createRegistry } from './kernel/registry'
+import { edit } from './apps/edit'
 import { term } from './apps/term'
 import type { AppManifest } from './kernel/types'
 import { restore, startPersistence } from './persist'
@@ -21,7 +22,7 @@ const wm = new WindowManager(document.querySelector('#windows') as HTMLElement, 
 const registry = createRegistry(wm, bus)
 
 // later tasks append app manifests here
-const apps: AppManifest[] = [term]
+const apps: AppManifest[] = [term, edit]
 apps.forEach(a => registry.register(a))
 
 const cap = (s: string) => s[0].toUpperCase() + s.slice(1)
