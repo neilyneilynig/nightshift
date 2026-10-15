@@ -6,28 +6,51 @@ Status: draft, awaiting review
 ## Purpose
 
 A native desktop app (Tauri) that looks and feels like a fake cyberpunk
-operating system in the style of Zachtronics' *Last Call BBS*, but that you
-actually code in every day. Real shells, real files, real git — wrapped in a
-dial-up BBS fantasy.
+operating system — part Zachtronics' *Last Call BBS* dial-up board, part
+Cyberpunk 2077 netrunner cyberdeck — that you actually code in every day.
+Real shells, real files, real git, real system data, wrapped in a
+fantasy of ICE, daemons, fixers and eddies.
 
-**Success looks like:** you launch `nightshift`, sit through (or skip) a modem
-boot, and then do a normal coding session — edit files, run `git`, run
-`claude`, run tests — without ever needing to leave the app.
+**Success looks like:** you launch `nightshift`, jack in through (or skip) a
+modem boot and breach, and then do a normal coding session — edit files, run
+`git`, run `claude`, run tests — without ever needing to leave the app, while
+the OS makes it feel like a netrun.
 
-**Non-goals (v1):** LSP / autocomplete, debugger, extensions/plugins, remote
+**Non-goals (v1):** LSP / autocomplete, debugger, third-party plugins, remote
 machines, Windows/macOS packaging. Linux (Arch + Hyprland) only.
+
+## Ground rules
+
+1. **Everything is an app.** Every feature is a launchable window with an
+   icon, a name, a category and a hotkey. Only a few things are system-wide
+   *modes* (listed in "System layer"), and each of those also has an app for
+   configuring it.
+2. **Real underneath.** Every hacking effect is either a cyberpunk skin over
+   a real action/data on your own machine, or clearly decorative.
+3. **Never touch other people's machines.** No port scanning, probing or
+   attacking other hosts. Network apps read your own machine's state or talk
+   to URLs you explicitly type.
+4. **Original names and art.** Inspired by Cyberpunk 2077 / Last Call BBS;
+   no copied assets, logos or text.
+5. **Destructive actions confirm.** Anything that kills, deletes, stashes,
+   rewrites or changes system config asks first, in-world.
 
 ## Stack
 
 - **Tauri 2** shell, Rust backend in `src-tauri/`.
-- **Frontend:** Vite + plain TypeScript, no UI framework. Small hand-written
-  window manager.
+- **Frontend:** Vite + plain TypeScript, no UI framework. Hand-written window
+  manager and app framework.
 - **Terminal:** xterm.js (+ fit, search, web-links addons).
-- **Editor:** CodeMirror 6 with language packs for TS/JS, Rust, Python, HTML,
-  CSS, JSON, Markdown.
-- **Rust crates:** `portable-pty` (shells), `sysinfo` (system monitor),
-  `notify` (file watching), `ignore` + `grep` crates or shelling out to `rg`
-  (search), `serde`/`serde_json`, `age` (data shards).
+- **Editor:** CodeMirror 6 with TS/JS, Rust, Python, HTML, CSS, JSON,
+  Markdown, YAML, TOML, Shell.
+- **Graphics:** Canvas 2D for most visualizations; WebGL (raw, no library)
+  only for NET MAP.
+- **Rust crates:** `portable-pty`, `sysinfo`, `notify`, `ignore`, `serde` /
+  `serde_json`, `age`, `reqwest` (UPLINK, NIGHT NEWS), `sha2` / `base64` /
+  `hex` (DECRYPTOR). System tools invoked as CLIs when present: `git`, `rg`,
+  `gh`, `ss`, `ip`, `nmcli`, `ufw`, `journalctl`, `docker`, `nvidia-smi`,
+  `traceroute`. Missing tool → app shows `MODULE NOT INSTALLED` with the
+  package name instead of crashing.
 
 ## Architecture
 
@@ -37,207 +60,226 @@ src-tauri/src/
   pty.rs         spawn / write / resize / kill; output streamed as events
   fs.rs          list / read / write / rename / delete inside workspace root
   search.rs      fuzzy file list + content search (ripgrep)
-  git.rs         status, branch, ahead/behind, recent log (via `git` CLI)
+  git.rs         status, branch, log, stage, commit, stash (git CLI)
   jobs.rs        detect + run project tasks (package.json, Cargo, Makefile)
-  sys.rs         CPU / RAM / disk / process list snapshots
-  state.rs       load/save ~/.config/nightshift/state.json
+  sys.rs         CPU / RAM / disk / GPU / process snapshots, kill
+  net.rs         ss, ip neigh, nmcli, traceroute, ufw status (read-only)
+  tools.rs       hashing, encoding, encryption, HTTP requests
+  logs.rs        journalctl / file tail streams
+  watch.rs       daemon runtime: file watchers that trigger jobs
+  state.rs       ~/.config/nightshift/ load/save
 src/
-  main.ts        boot → login → desktop
-  wm/            window manager: create, focus, drag, resize, snap, minimize,
-                 virtual desktops, taskbar
-  apps/          one folder per app (see Features), each exports
-                 `open(opts): AppWindow`
-  fx/            CRT shader (CSS), themes, WebAudio sfx + music synth
-  bbs/           ANSI menu renderer, lore text, sysop messages
+  main.ts        boot → breach → login → desktop
+  kernel/        app registry, event bus, permissions/confirm dialogs,
+                 notifications, eddies ledger
+  wm/            windows, focus, drag/resize, snap, nodes, taskbar, desktop
+                 icons, JACK menu
+  apps/<id>/     one folder per app; each exports an AppManifest + open()
+  system/        overlay modes: scan mode, quickhack wheel, glitch fx,
+                 screensaver, sysop pop-ups
+  fx/            CRT shader (CSS), themes, WebAudio sfx + synth
   ipc.ts         typed wrappers around Tauri invoke/listen
 ```
 
-Each app talks to Rust only through `ipc.ts`. Apps do not know about each
-other; they communicate through a tiny event bus (`bus.emit('file:open', path)`)
-so, e.g., the file finder can ask the editor to open a file.
+### App framework
 
-**Workspace root:** all fs/search/git/jobs commands are scoped to one opened
+```ts
+interface AppManifest {
+  id: string            // 'term', 'icebreak', ...
+  name: string          // 'TERM'
+  glyph: string         // 2-3 char ASCII icon, e.g. '>_'
+  category: 'core' | 'netrun' | 'tools' | 'system' | 'street' | 'doors'
+  hotkey?: string       // e.g. 'Ctrl+Alt+T'
+  multi: boolean        // can open several windows
+  needs?: string[]      // CLI tools; missing → MODULE NOT INSTALLED
+  open(ctx: AppContext, args?: unknown): AppWindow
+}
+```
+
+- `AppContext` gives each app: `ipc`, `bus`, `notify()`, `confirm()`,
+  `eddies.earn()`, `theme`, and a per-app settings store.
+- Apps never import each other; they talk through `bus` events
+  (`file:open`, `job:run`, `job:done`, `git:changed`, `gig:new`, ...).
+- Launch surfaces, all fed by the registry: desktop icons, **JACK menu**
+  (start menu grouped by category), BBS main menu, SYSOP CMD palette,
+  hotkeys.
+
+**Workspace root:** fs/search/git/jobs/watch commands are scoped to one opened
 folder. `fs.rs` canonicalizes paths and rejects anything outside the root.
-Terminals are not sandboxed (they're your real shell) but start in the root.
+Terminals are real shells (not sandboxed) and start in the root.
 
-## Features
+## App catalog
 
-### Core (the "real coding" part)
+### CORE — real coding
 
-1. **TERM — terminal windows.** Real `$SHELL` in a PTY. Multiple windows,
-   split panes (horizontal/vertical) inside one window, scrollback search
-   (Ctrl+Shift+F), clickable links, copy/paste.
-2. **EDIT — code editor.** File tree sidebar, tabs, split view, syntax
-   highlighting, find/replace, Ctrl+S save, dirty markers, reload prompt when a
-   file changes on disk (via `notify`).
-3. **SYSOP CMD — command palette (Ctrl+K).** Fuzzy list of every action: open
-   app, open file, run job, switch theme, switch desktop. Styled as a BBS
-   prompt (`SYSOP> _`).
-4. **SCAN — file finder & search.** Ctrl+P fuzzy file open; Ctrl+Shift+S
-   project-wide text search with results that open in EDIT at the line.
-5. **NETWATCH — git panel.** Branch, ahead/behind, changed files (click to
-   open), recent commits. Stage/unstage/commit from the panel. Polls every few
-   seconds and on save.
-6. **JOBS — task runner.** Auto-detects `package.json` scripts, `cargo`
-   targets, `Makefile` targets. One click runs the task in a new TERM pane;
-   shows running/passed/failed status lights.
-7. **CONSTRUCT — AI terminal.** A TERM preset that launches `claude` in the
-   workspace root, framed as a jacked-in AI construct. (Just a terminal; no
-   API integration.)
-8. **Markdown preview.** Live side-by-side preview for `.md` files in EDIT.
+| App | What it is |
+|---|---|
+| **TERM** `>_` | Real `$SHELL` in a PTY. Multiple windows, split panes, scrollback search, clickable links, copy/paste. |
+| **EDIT** `{}` | Code editor: file tree, tabs, split view, find/replace, Ctrl+S, dirty markers, reload-on-external-change prompt, live markdown preview. |
+| **CONSTRUCT** `AI` | TERM preset that launches `claude` in the workspace, framed as a jacked-in AI construct with a pulsing engram border. |
+| **SCAN** `?/` | Ctrl+P fuzzy file open; Ctrl+Shift+S project-wide search, results open EDIT at the line. |
+| **NETWATCH** `<>` | Git: branch, ahead/behind, changed files, diff viewer, stage/unstage, commit, recent log, branch switcher. |
+| **JOBS** `!!` | Auto-detected npm/cargo/make tasks; runs them in TERM panes with pass/fail status lights and run history. |
+| **OPTICS** `()` | Built-in browser window for `localhost` dev servers and docs (Tauri webview), with HUD frame and reload hotkey. |
 
-### OS chrome
+### NETRUN — cyberdeck apps
 
-9. **Boot sequence.** BIOS POST text → modem dial tones/handshake (synthesized)
-   → BBS ANSI title screen → login (any name; remembered). Esc skips;
-   `boot: false` in config disables it.
-10. **Window manager.** Drag, resize, minimize, maximize, close; DOS-style
-    box-drawing frames; snap with Super+arrows; tile-all shortcut.
-11. **Virtual desktops ("NODES").** 4 nodes, Ctrl+1..4 to switch; taskbar shows
-    node lights.
-12. **Taskbar.** Open windows, node lights, clock, CPU/RAM blips, git branch,
-    shift timer.
-13. **CRT effects.** Scanlines, phosphor glow, slight curvature/vignette,
-    occasional flicker. Intensity slider; fully off for long sessions.
-14. **Themes.** Green phosphor, amber, neon magenta, "Last Call" purple/cyan,
-    and a low-glare "day shift". Applies to chrome, xterm palette, and
-    CodeMirror theme together.
-15. **Sound.** Keyclicks (optional), window open/close blips, error buzz, modem
-    sounds — all WebAudio-synthesized, no asset files. Master mute.
-16. **Screensaver.** After N idle minutes: starfield / falling glyphs / "NO
-    CARRIER" bounce. Any key returns.
-17. **Layout persistence.** Windows, nodes, open files, theme, last workspace
-    restored on launch.
+| App | What it is |
+|---|---|
+| **ICEBREAK** `1C` | Code-matrix breach game: hex grid, alternating row/column picks, buffer, 1–3 daemon sequences, timer. Daily breach + endless mode; difficulty scales with street cred. Optional boot jack-in gate. |
+| **QUICKHACK** `QH` | Deck loadout: choose which quickhacks are on your wheel, see RAM costs, cooldowns and usage stats. (The wheel itself is a system overlay.) |
+| **DAEMONS** `Dm` | Upload / kill background watchers: test-on-save, lint-on-save, auto git fetch, TODO watcher, build-on-save, custom "on change of glob X run command Y". Live status + log per daemon. |
+| **GIGS** `$$` | Fixer contracts generated from `TODO`/`FIXME`/`HACK` in the repo and GitHub issues (`gh`). Payout in eddies; removing the TODO / closing the issue completes the gig. Holocall animation for new gigs. |
+| **CYBERDECK** `[#]` | Your machine as a deck: CPU core clock/temp, RAM slots, disk shards, battery, GPU (`nvidia-smi`), process list with SHORT CIRCUIT (kill, confirm). |
+| **NET MAP** `/\` | WebGL wireframe cyberspace of the project: dirs as subnets, files as nodes sized by lines, git-hot files glowing, branches as routes. Fly-through camera; click to open. |
+| **SUBNET** `::` | Read-only own-network view: listening ports as access points, active connections as data streams, ARP-table neighbors as passive nodes. |
+| **TRACEROUTE** `~>` | Type a host → animated hop map with latency per hop and a "trace" path across a fake city grid. |
+| **SIGNAL** `))` | Wi-Fi radar: nearby networks from `nmcli` as blips by signal strength, channel, security. Read-only. |
+| **BLACKWALL** `##` | Your firewall (`ufw status`) rendered as a wall of ICE with rule bricks. Read-only by default; edits run `pkexec ufw ...` after confirm. |
+| **BRAINDANCE** `BD` | Record TERM sessions with timing; replay with scrubbable timeline, speed control, input/output layers. Export as asciicast. |
+| **SHARDS** `<|>` | Encrypt/decrypt files with a passphrase (`age`), packing animation into a data shard. |
+| **HEXVIEW** `0x` | Hex/ASCII viewer for any file, glitchy scrubber, jump-to-offset, highlight selection as int/float/string. |
+| **OVERCLOCK** `>>>` | Hacker-typer: mash keys, it types real code from your repo fullscreen with scrolling hex side panels. For streams. |
+| **TRACE LOG** `T!` | History of NetWatch trace runs: each long task's time vs trace limit, evasions, best times. |
 
-### BBS & flavor
+### TOOLS — dev utilities, cyberpunk-skinned
 
-18. **BBS main menu.** ANSI art launcher: `[T]erminal [E]dit [N]etwatch
-    [J]obs [M]essages [D]oors [S]ettings [G]oodbye`. Hotkeys work.
-19. **MESSAGES — message board.** Fake threads from other "users" with lore;
-    plus your own real notes (create/edit, saved to config dir) — doubles as a
-    scratchpad/todo list.
-20. **SYSOP chat.** Occasional sysop pop-ups reacting to real events ("caught
-    your commit, nice", "tests failing again, choom?"). Toggleable.
-21. **CREDITS — achievements.** Earn BBS credits for real events: commits,
-    saves, passing jobs, late-night sessions. Shown on your user profile.
-22. **SHIFT timer.** Pomodoro-style focus timer; sysop calls break time.
-23. **RADIO.** Generative ambient/chiptune synth loop (WebAudio), a few
-    stations, volume knob.
-24. **DOORS.** One small BBS door game (snake-like "DATA WORM") for breaks.
-25. **SYSMON.** Real CPU / RAM / disk graphs and a process list, rendered as
-    "ICE" intrusion meters.
+| App | What it is |
+|---|---|
+| **DECRYPTOR** `#?` | Base64/hex/URL encode-decode, SHA-1/256/512 and MD5 hashes, JWT decoder, UUID and password generator, Unix-time converter. |
+| **PATTERN ICE** `.*` | Regex tester: live matches, capture groups, replace preview, flags. |
+| **UPLINK** `=>` | HTTP client: method, URL, headers, body, saved requests, response viewer with timing. Only URLs you enter. |
+| **DATASTREAM** `[]` | JSON/YAML/TOML viewer: collapsible tree, path query, pretty/minify, diff two documents. |
+| **RELAY** `@` | SSH launcher from `~/.ssh/config`: pick a host → opens TERM running `ssh host`, with a "secure relay" connect animation. |
+| **BIOCHIP** `$E` | `.env` manager for the workspace: list vars with values masked, reveal on click, edit, compare with `.env.example`. |
+| **CACHE** `C:` | Clipboard history (in-app copies + system clipboard polling), pin, search, re-copy. |
+| **SNIPLIB** `</>` | Snippet library: save code snippets with tags, insert into EDIT or TERM. |
+| **BLACKBOX** `LOG` | Log tail: `journalctl -f` (unit filter) or any log file, with level highlighting, filter, pause. |
+| **SAFEHOUSES** `[D]` | Docker containers/images: status, start/stop/restart (confirm), logs into BLACKBOX, shell into TERM. |
 
-### Netrunner layer (Cyberpunk 2077-inspired)
+### SYSTEM — the OS itself
 
-Rule: every hacking effect is either (a) a cyberpunk skin over a **real**
-action/data on your own machine, or (b) clearly decorative. Nothing probes or
-touches other people's hosts. Original names and art only — no CDPR assets.
+| App | What it is |
+|---|---|
+| **SYSOP CMD** `>` | Ctrl+K palette for every app and action, styled `SYSOP> _`. |
+| **JACK** `JK` | Start menu: apps by category, recent files, workspace switcher, logout ("Goodbye"). |
+| **RIPPERDOC** `+` | Settings as a cyberware body scan: Optics (CRT/glitch/theme), Audio Cortex (sound/radio), Neural Link (keybindings), Kiroshi (scan mode), OS (boot, nodes, sysop). |
+| **NODES** `1234` | Overview of the 4 virtual desktops with live thumbnails; drag windows between them. |
+| **NOTIFY** `!` | Notification center: daemon alerts, job results, gigs, sysop messages, with history. |
+| **FILES** `/` | File manager for the workspace: grid/list, rename, move, delete (confirm), new file/folder. |
 
-26. **ICEBREAK — code-matrix breach minigame.** Hex grid (`1C BD 55 E9 7A FF`),
-    alternating row/column picks, buffer slots, 1–3 target daemon sequences,
-    countdown timer. Optional "jack-in" gate on boot (skippable), also
-    playable from DOORS. Difficulty scales with your street cred.
-27. **SCAN MODE (hold Alt).** Desktop desaturates, glitch overlay, and every
-    window gets a tagged HUD readout with real data: TERM → PID, cwd, running
-    command, uptime; EDIT → file size, language, last git author, line count;
-    NETWATCH → branch threat level by uncommitted changes. Corner reticles
-    like optics implants.
-28. **QUICKHACKS — radial wheel (right-click / Ctrl+Q).** Real actions with a
-    regenerating fake RAM cost:
-    - `SHORT CIRCUIT` → kill the focused window's foreground process
-    - `PING` → highlight every window/file linked to the current file
-    - `REBOOT OPTICS` → clear terminal / reset CRT
-    - `SYSTEM RESET` → `git stash` (with confirm)
-    - `OVERHEAT` → run the current JOBS test task
-    - `CONTAGION` → search-and-replace across the project (with preview)
-    - `MEMORY WIPE` → close all clean (unsaved-free) windows
-    Upload animation with progress bar + glitch on hit.
-29. **DAEMONS.** Background watchers you "upload" and see as running daemons
-    in the taskbar: test-on-save, lint-on-save, auto-fetch git, TODO watcher.
-    Each has a status glyph; failures trigger a red alert glitch.
-30. **GIGS — fixer contracts from your TODOs.** Scans the repo for
-    `TODO`/`FIXME`/`HACK` (and GitHub issues via `gh` if available) and lists
-    them as contracts from a fixer with a payout in eddies. Removing the
-    TODO / closing the issue completes the gig. Incoming-holocall animation
-    when new gigs appear.
-31. **EDDIES & STREET CRED.** Replaces plain credits: earn eddies for commits,
-    passing jobs, completed gigs; street cred levels unlock themes, ICEBREAK
-    difficulty, and cosmetic deck chrome.
-32. **CYBERDECK panel.** Your real machine rendered as a deck: CPU as deck
-    core with clock/temp, RAM as memory slots, disk as shard storage,
-    battery, GPU (via `nvidia-smi` if present). Replaces/extends SYSMON.
-33. **NET MAP — cyberspace view.** Wireframe node graph of the project: dirs
-    as subnets, files as nodes sized by lines, git-hot files glowing, branches
-    as data routes. Click a node to open it; fly-through camera (Canvas/WebGL).
-34. **SUBNET — your own network, read-only.** Listening ports on this machine
-    (`ss -ltn`) as "open access points", active connections as data streams,
-    known LAN neighbors from the ARP table (`ip neigh`) as passive nodes, and
-    a `traceroute` visualizer for a host you type, drawn as a hop map with
-    latency. No port scanning of other hosts.
-35. **BRAINDANCE — session recorder.** Record a TERM session (asciinema-style
-    timing data) and replay it with a scrubbable timeline, speed control and
-    layer view (input vs output). Saved to `~/.config/nightshift/bd/`.
-36. **DATA SHARDS — real encryption.** Encrypt/decrypt files with
-    passphrase (`age` crate) shown as packing data into a shard. Hex viewer
-    for any binary file with a glitchy scrubber.
-37. **TRACE meter.** When a JOBS task or long command runs, a "NetWatch trace"
-    bar fills with elapsed time; finishing before it fills = "trace
-    evaded" bonus eddies. Purely flavor, pinned to taskbar.
-38. **OVERCLOCK — hacker-typer mode.** Mash keys and it types real code from
-    your repo in a fullscreen terminal with scrolling hex side panels —
-    for streams/videos. Esc exits.
-39. **RIPPERDOC — settings as cyberware.** Settings screen is a body-scan
-    UI; each setting group is an implant slot (Optics = CRT/fx, Audio Cortex
-    = sound, Neural Link = keybindings, OS = theme/boot).
-40. **Glitch FX kit.** Chromatic aberration, RGB split, datamosh window
-    transitions, scanline tearing on errors, "relic malfunction" easter egg
-    after 3 a.m. All behind the CRT intensity slider.
-41. **NIGHT CITY theme.** Yellow/red/cyan high-contrast palette with angled
-    panel cuts and hazard stripes; added to the theme set.
+### STREET — your identity and the world
+
+| App | What it is |
+|---|---|
+| **PROFILE** `ID` | Your netrunner ID card: handle, street cred level, eddies, achievements, coding stats (commits, saves, jobs, gigs, hours jacked in). |
+| **AGENT** `Ag` | Phone-style hub: contacts (sysop, fixer, ripperdoc, a rival netrunner), message threads mixing lore with reactions to your real activity. |
+| **MESSAGES** `Ms` | BBS message board: fake lore threads plus your real notes/todo (markdown, saved to config dir). |
+| **NIGHT NEWS** `N` | News ticker app: in-world fake headlines + real RSS feeds you configure (e.g. HN), shown as a scrolling broadcast. |
+| **SHIFT** `:30` | Pomodoro focus timer; sysop calls break time; tracks focus streaks. |
+| **RADIO** `~~` | Generative synthwave/chiptune stations (WebAudio), plus a local music folder player, with a visualizer. |
+| **VENDOR** `VD` | Spend eddies on cosmetics: themes, window chrome, boot screens, cursor trails, ICEBREAK skins. |
+
+### DOORS — BBS door games
+
+| App | What it is |
+|---|---|
+| **DATA WORM** `~o` | Snake in a data grid; eat packets, avoid ICE. |
+| **ICEBREAK** | Also listed here (it's the main game). |
+| **NETRUN DEFENSE** `TD` | Tiny tower defense: place ICE programs to stop intrusion packets crawling toward your core. |
+| **TYPE BREACH** `Ty` | Typing-speed game using real code lines from your repo; WPM feeds street cred. |
+
+## System layer (overlay modes)
+
+These are global, not windows; each is configured in RIPPERDOC or its app.
+
+- **Boot:** BIOS POST → modem handshake (synthesized) → optional ICEBREAK
+  jack-in → BBS ANSI title → login. Esc skips; can be disabled.
+- **Window manager:** drag, resize, min/max/close, box-drawing frames, snap
+  with Super+arrows, tile-all, desktop icons, taskbar with node lights,
+  clock, CPU/RAM blips, git branch, running daemons, trace meter.
+- **Nodes:** 4 virtual desktops, Ctrl+1..4.
+- **SCAN MODE (hold Alt):** desaturate + glitch; every window gets a HUD tag
+  with real data (PID/cwd/command for TERM, size/language/last author for
+  EDIT, etc.); corner reticles.
+- **QUICKHACK wheel (Ctrl+Q / right-click title bar):** real actions with a
+  regenerating fake RAM cost — `SHORT CIRCUIT` (kill foreground process),
+  `PING` (highlight related windows), `REBOOT OPTICS` (clear terminal),
+  `SYSTEM RESET` (`git stash`), `OVERHEAT` (run tests), `CONTAGION`
+  (project search-and-replace with preview), `MEMORY WIPE` (close clean
+  windows). Upload progress bar + glitch on hit.
+- **TRACE meter:** long jobs fill a NetWatch trace bar; finishing first =
+  "trace evaded" bonus eddies.
+- **Eddies & street cred:** ledger in `kernel/`; earned from commits,
+  passing jobs, gigs, door games, focus streaks; spent in VENDOR.
+- **Sysop pop-ups:** in-world messages reacting to real events. Toggleable.
+- **Glitch FX kit:** chromatic aberration, RGB split, datamosh transitions,
+  scanline tearing on errors, "relic malfunction" easter egg after 3 a.m.
+- **CRT:** scanlines, glow, curvature, flicker; intensity slider, off switch.
+- **Themes:** Green phosphor, Amber, Neon magenta, Last Call purple/cyan,
+  NIGHT CITY yellow/red/cyan, Day shift (low glare). Each themes chrome,
+  xterm and CodeMirror together.
+- **Sound:** keyclicks (opt.), blips, error buzz, modem, quickhack uploads —
+  all synthesized. Master mute.
+- **Screensaver:** starfield / falling glyphs / `NO CARRIER` bounce.
+- **Persistence:** windows per node, open files, theme, workspace restored.
 
 ## Data & persistence
 
-- `~/.config/nightshift/state.json`: theme, fx settings, login name, last
-  workspace, window layout per node, open files.
-- `~/.config/nightshift/notes/*.md`: MESSAGES notes.
-- `~/.config/nightshift/credits.json`: achievement counters.
-- Corrupt or missing state → start fresh with defaults and log a warning.
+All under `~/.config/nightshift/`:
+
+- `state.json` — theme, fx, login handle, workspace, layouts, open files
+- `apps/<id>.json` — per-app settings (saved requests, daemons, feeds, ...)
+- `notes/*.md` — MESSAGES notes
+- `snippets/*.json` — SNIPLIB
+- `bd/*.cast` — BRAINDANCE recordings
+- `ledger.json` — eddies, street cred, achievements, stats
+
+Corrupt or missing file → defaults + a NOTIFY warning; never crash.
 
 ## Error handling
 
-- Any failed IPC call surfaces as an in-world **SYSTEM FAULT** dialog showing
-  the real error text, with OK / copy-details.
-- PTY exit shows `NO CARRIER (exit N)` in the pane with a [R]econnect key.
-- Saving over a file changed on disk asks before overwriting.
-- Path outside workspace root → rejected in Rust, never reaches disk.
+- Failed IPC → in-world **SYSTEM FAULT** dialog with the real error text,
+  OK / copy details.
+- PTY exit → `NO CARRIER (exit N)` with [R]econnect.
+- Missing CLI tool → `MODULE NOT INSTALLED: <pkg>` in the app window.
+- Save conflicts → overwrite / reload / diff choice.
+- Path outside workspace root → rejected in Rust.
+- Privileged actions (BLACKWALL edits) → `pkexec`, after confirm; denial is
+  shown, not retried.
 
 ## Testing
 
-- **Rust unit tests:** path guard (`..`, symlinks, absolute paths); PTY spawn
-  + echo round-trip; git status parsing; job detection on fixture projects;
-  state load with corrupt JSON.
-- **Frontend unit tests (Vitest):** window manager (focus order, snap math,
-  node switching), command palette fuzzy match, event bus, credits rules.
-- **Manual smoke test:** boot → login → open workspace → TERM `git status` →
-  EDIT a file, save → NETWATCH shows it changed → JOBS runs a script → restart
-  app and layout is restored.
+- **Rust unit tests:** path guard; PTY echo round-trip; git status/log
+  parsing; job detection fixtures; TODO→gig extraction; `ss`/`ip neigh`/
+  `nmcli`/`ufw` output parsers (fixture text); DECRYPTOR functions; `age`
+  round-trip; corrupt state loading.
+- **Frontend unit tests (Vitest):** app registry + launch surfaces, WM focus
+  / snap / nodes, palette fuzzy match, bus, eddies ledger rules, ICEBREAK
+  puzzle generator always solvable, quickhack RAM regen.
+- **Manual smoke test per milestone** (listed in the plan).
 
-## Build order (for the plan)
+## Milestones
 
-1. Tauri scaffold, `pty.rs` + TERM window, `fs.rs` + EDIT (usable core).
-2. Window manager, taskbar, nodes, persistence.
-3. Themes + CRT fx + sound, boot sequence, BBS menu.
-4. SYSOP CMD, SCAN, NETWATCH, JOBS, CONSTRUCT, markdown preview.
-5. Flavor: MESSAGES, sysop chat, CREDITS, SHIFT, RADIO, DOORS, SYSMON,
-   screensaver.
-6. Netrunner core: glitch FX kit, NIGHT CITY theme, SCAN MODE, QUICKHACKS,
-   DAEMONS, ICEBREAK.
-7. Netrunner data apps: GIGS, eddies/street cred, CYBERDECK, NET MAP,
-   SUBNET, TRACE.
-8. Netrunner extras: BRAINDANCE, DATA SHARDS, OVERCLOCK, RIPPERDOC.
-9. `nightshift` launcher command + `.desktop` entry.
+The catalog is ~50 apps — too big for one plan. Each milestone gets its own
+implementation plan and is usable on its own.
+
+1. **Jack in (usable core):** Tauri scaffold, app framework, WM, nodes,
+   taskbar, JACK menu, TERM, EDIT, FILES, SCAN, SYSOP CMD, persistence,
+   `nightshift` launcher + `.desktop`.
+2. **Look & feel:** themes, CRT, glitch kit, sound, boot, BBS menu,
+   RIPPERDOC, NOTIFY, screensaver.
+3. **Dev flow:** NETWATCH, JOBS, CONSTRUCT, OPTICS, DAEMONS, TRACE meter +
+   TRACE LOG.
+4. **Netrunner core:** SCAN MODE, QUICKHACK wheel + app, ICEBREAK,
+   CYBERDECK, eddies/street cred, PROFILE, GIGS.
+5. **Network:** SUBNET, TRACEROUTE, SIGNAL, BLACKWALL, NET MAP.
+6. **Tools:** DECRYPTOR, PATTERN ICE, UPLINK, DATASTREAM, RELAY, BIOCHIP,
+   CACHE, SNIPLIB, BLACKBOX, SAFEHOUSES, HEXVIEW, SHARDS.
+7. **Street & doors:** AGENT, MESSAGES, NIGHT NEWS, SHIFT, RADIO, VENDOR,
+   BRAINDANCE, OVERCLOCK, DATA WORM, NETRUN DEFENSE, TYPE BREACH.
 
 ## Prerequisite
 
 `/home` has ~3 GB free; a Tauri build needs ~2–4 GB for `target/`. Space must
-be freed before step 1 builds.
+be freed before milestone 1 builds.
