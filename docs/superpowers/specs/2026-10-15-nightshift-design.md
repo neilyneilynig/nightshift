@@ -27,7 +27,7 @@ machines, Windows/macOS packaging. Linux (Arch + Hyprland) only.
   CSS, JSON, Markdown.
 - **Rust crates:** `portable-pty` (shells), `sysinfo` (system monitor),
   `notify` (file watching), `ignore` + `grep` crates or shelling out to `rg`
-  (search), `serde`/`serde_json`.
+  (search), `serde`/`serde_json`, `age` (data shards).
 
 ## Architecture
 
@@ -127,6 +127,74 @@ Terminals are not sandboxed (they're your real shell) but start in the root.
 25. **SYSMON.** Real CPU / RAM / disk graphs and a process list, rendered as
     "ICE" intrusion meters.
 
+### Netrunner layer (Cyberpunk 2077-inspired)
+
+Rule: every hacking effect is either (a) a cyberpunk skin over a **real**
+action/data on your own machine, or (b) clearly decorative. Nothing probes or
+touches other people's hosts. Original names and art only — no CDPR assets.
+
+26. **ICEBREAK — code-matrix breach minigame.** Hex grid (`1C BD 55 E9 7A FF`),
+    alternating row/column picks, buffer slots, 1–3 target daemon sequences,
+    countdown timer. Optional "jack-in" gate on boot (skippable), also
+    playable from DOORS. Difficulty scales with your street cred.
+27. **SCAN MODE (hold Alt).** Desktop desaturates, glitch overlay, and every
+    window gets a tagged HUD readout with real data: TERM → PID, cwd, running
+    command, uptime; EDIT → file size, language, last git author, line count;
+    NETWATCH → branch threat level by uncommitted changes. Corner reticles
+    like optics implants.
+28. **QUICKHACKS — radial wheel (right-click / Ctrl+Q).** Real actions with a
+    regenerating fake RAM cost:
+    - `SHORT CIRCUIT` → kill the focused window's foreground process
+    - `PING` → highlight every window/file linked to the current file
+    - `REBOOT OPTICS` → clear terminal / reset CRT
+    - `SYSTEM RESET` → `git stash` (with confirm)
+    - `OVERHEAT` → run the current JOBS test task
+    - `CONTAGION` → search-and-replace across the project (with preview)
+    - `MEMORY WIPE` → close all clean (unsaved-free) windows
+    Upload animation with progress bar + glitch on hit.
+29. **DAEMONS.** Background watchers you "upload" and see as running daemons
+    in the taskbar: test-on-save, lint-on-save, auto-fetch git, TODO watcher.
+    Each has a status glyph; failures trigger a red alert glitch.
+30. **GIGS — fixer contracts from your TODOs.** Scans the repo for
+    `TODO`/`FIXME`/`HACK` (and GitHub issues via `gh` if available) and lists
+    them as contracts from a fixer with a payout in eddies. Removing the
+    TODO / closing the issue completes the gig. Incoming-holocall animation
+    when new gigs appear.
+31. **EDDIES & STREET CRED.** Replaces plain credits: earn eddies for commits,
+    passing jobs, completed gigs; street cred levels unlock themes, ICEBREAK
+    difficulty, and cosmetic deck chrome.
+32. **CYBERDECK panel.** Your real machine rendered as a deck: CPU as deck
+    core with clock/temp, RAM as memory slots, disk as shard storage,
+    battery, GPU (via `nvidia-smi` if present). Replaces/extends SYSMON.
+33. **NET MAP — cyberspace view.** Wireframe node graph of the project: dirs
+    as subnets, files as nodes sized by lines, git-hot files glowing, branches
+    as data routes. Click a node to open it; fly-through camera (Canvas/WebGL).
+34. **SUBNET — your own network, read-only.** Listening ports on this machine
+    (`ss -ltn`) as "open access points", active connections as data streams,
+    known LAN neighbors from the ARP table (`ip neigh`) as passive nodes, and
+    a `traceroute` visualizer for a host you type, drawn as a hop map with
+    latency. No port scanning of other hosts.
+35. **BRAINDANCE — session recorder.** Record a TERM session (asciinema-style
+    timing data) and replay it with a scrubbable timeline, speed control and
+    layer view (input vs output). Saved to `~/.config/nightshift/bd/`.
+36. **DATA SHARDS — real encryption.** Encrypt/decrypt files with
+    passphrase (`age` crate) shown as packing data into a shard. Hex viewer
+    for any binary file with a glitchy scrubber.
+37. **TRACE meter.** When a JOBS task or long command runs, a "NetWatch trace"
+    bar fills with elapsed time; finishing before it fills = "trace
+    evaded" bonus eddies. Purely flavor, pinned to taskbar.
+38. **OVERCLOCK — hacker-typer mode.** Mash keys and it types real code from
+    your repo in a fullscreen terminal with scrolling hex side panels —
+    for streams/videos. Esc exits.
+39. **RIPPERDOC — settings as cyberware.** Settings screen is a body-scan
+    UI; each setting group is an implant slot (Optics = CRT/fx, Audio Cortex
+    = sound, Neural Link = keybindings, OS = theme/boot).
+40. **Glitch FX kit.** Chromatic aberration, RGB split, datamosh window
+    transitions, scanline tearing on errors, "relic malfunction" easter egg
+    after 3 a.m. All behind the CRT intensity slider.
+41. **NIGHT CITY theme.** Yellow/red/cyan high-contrast palette with angled
+    panel cuts and hazard stripes; added to the theme set.
+
 ## Data & persistence
 
 - `~/.config/nightshift/state.json`: theme, fx settings, login name, last
@@ -162,7 +230,12 @@ Terminals are not sandboxed (they're your real shell) but start in the root.
 4. SYSOP CMD, SCAN, NETWATCH, JOBS, CONSTRUCT, markdown preview.
 5. Flavor: MESSAGES, sysop chat, CREDITS, SHIFT, RADIO, DOORS, SYSMON,
    screensaver.
-6. `nightshift` launcher command + `.desktop` entry.
+6. Netrunner core: glitch FX kit, NIGHT CITY theme, SCAN MODE, QUICKHACKS,
+   DAEMONS, ICEBREAK.
+7. Netrunner data apps: GIGS, eddies/street cred, CYBERDECK, NET MAP,
+   SUBNET, TRACE.
+8. Netrunner extras: BRAINDANCE, DATA SHARDS, OVERCLOCK, RIPPERDOC.
+9. `nightshift` launcher command + `.desktop` entry.
 
 ## Prerequisite
 
