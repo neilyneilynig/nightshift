@@ -5,6 +5,7 @@ import { installHotkeys } from './kernel/hotkeys'
 import { createRegistry } from './kernel/registry'
 import { edit } from './apps/edit'
 import { files } from './apps/files'
+import { scan } from './apps/scan'
 import { term } from './apps/term'
 import type { AppManifest } from './kernel/types'
 import { restore, startPersistence } from './persist'
@@ -23,7 +24,7 @@ const wm = new WindowManager(document.querySelector('#windows') as HTMLElement, 
 const registry = createRegistry(wm, bus)
 
 // later tasks append app manifests here
-const apps: AppManifest[] = [term, edit, files]
+const apps: AppManifest[] = [term, edit, files, scan]
 apps.forEach(a => registry.register(a))
 
 const cap = (s: string) => s[0].toUpperCase() + s.slice(1)
@@ -40,6 +41,9 @@ for (let n = 1; n <= NODES; n++) {
   commands.add({ id: `node.${n}`, title: `Switch to node ${n}`, hint: `Ctrl+Alt+${n}`, run: () => wm.setNode(n) })
   commands.add({ id: `node.move.${n}`, title: `Move window to node ${n}`, hint: `Ctrl+Alt+Shift+${n}`, run: onFocused(id => wm.moveToNode(id, n)) })
 }
+
+commands.add({ id: 'scan.files', title: 'Find file', hint: 'Ctrl+Shift+P', run: () => void registry.launch('scan', { mode: 'files' }) })
+commands.add({ id: 'scan.text', title: 'Search text in workspace', hint: 'Ctrl+Shift+S', run: () => void registry.launch('scan', { mode: 'text' }) })
 
 installHotkeys(window, [
   ...commands.list().filter(c => c.hint).map(c => ({ combo: c.hint!, run: c.run })),
